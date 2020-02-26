@@ -1,7 +1,16 @@
 ---
-title: "First test page"
+title: "Homepage"
 author: "Harald Hofer"
 date: "26 2 2020"
+
+navbar:
+  title: "Data Visualizations"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "Galaxy Plot"
+      href: plot_galaxy.html
+
 output: html_document
 
 knit: (function(input_file, encoding) {

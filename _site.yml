@@ -1,0 +1,12 @@
+name: "my-website"
+output_dir: "C:/Users/hhofer01/OneDrive - Dentsu Aegis Network/Git/Data_Visualizations"
+navbar:
+  title: "Data Visualizations"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "Simulate digital ad report"
+      href: data_simulate_ProgrammaticReport.html
+    - text: "Galaxy Plot"
+      href: plot_galaxy.html
+
