@@ -1,5 +1,5 @@
 name: "Data Visualizations"
-output_dir: "docs"
+
 navbar:
   title: "Data Visualizations"
   left:
@@ -7,6 +7,10 @@ navbar:
       href: index.html
     - text: "Galaxy Plot"
       href: plot_galaxy.html
+
+output_dir: "docs"
 output:
   html_document:
-  theme: flatly
+    theme: flatly
+    toc: true  
+    toc_float: true
