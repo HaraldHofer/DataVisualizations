@@ -7,7 +7,9 @@ navbar:
       href: index.html
     - text: "Galaxy Plot"
       href: plot_galaxy.html
-
+    - text: "Weighted density plot - per group"
+      href: plot_GroupedWeightedDensity.html
+      
 output_dir: "docs"
 output:
   html_document:
