@@ -1,4 +1,5 @@
-name: "Website"
+name: "Data Visualizations"
+output_dir: "docs"
 navbar:
   title: "Data Visualizations"
   left:
@@ -6,4 +7,6 @@ navbar:
       href: index.html
     - text: "Galaxy Plot"
       href: plot_galaxy.html
-
+output:
+  html_document:
+  theme: flatly
