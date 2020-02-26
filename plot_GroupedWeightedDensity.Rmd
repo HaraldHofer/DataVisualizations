@@ -1,0 +1,199 @@
+---
+title: "Grouped plot with weighted density + histogram"
+author: "Harald Hofer"
+date: "26 2 2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Goal of the plot
+
+This plot is suppsed to show the distribution of a KPI for different groups.
+The distribution is weighted e.g. using the impressions to take into account the effect of volume.
+In addition to that the overall average and average per group is calculated and shown as vertical line.
+It also shows the % of volume which are lower than average.
+
+
+## Background
+
+This kind of plot was created to help investigating a common topic in (digital) media: *Benchmarks*
+
+Benchmarks are (at least implicitly) supposed to give an orientation about how "good" or "bad" a given KPI is. However, misconceptions about what benchmarks (commonly calculated as "overall-average") represent are common. Understanding of the position of the KPI-benchmark compared with the whole distribution of the KPIs is needed.
+
+
+## The Data
+
+First, get a report or create some data that represents a typical digital ad report which includes Impressions and Clicks for different campaigns, placements, creative sizes and devices for a given time period. For this demo I use the script in my DataGenerators repository.
+
+```{r include = FALSE}
+library(tidyverse)
+
+n_campaigns <- 5
+n_placements <- 5
+n_creativesizes <- 4
+n_devices <- 3
+n_days <- 60
+
+n_totalrows <- n_campaigns * n_placements * n_creativesizes * n_devices * n_days
+
+# Prepare tibble/dataframe that will be filled with the generated data
+tt <- as_tibble(matrix(nrow = n_totalrows, ncol = 8), .name_repair = "minimal")
+colnames(tt) <- c("campaign", "placement", "creativesize", "device", "day", "impressions", "clicks", "cost")
+
+
+# Create campaigns
+vec_campaigns <- paste("campaign", LETTERS[1:n_campaigns], sep = "_")
+
+
+# Create placements for each campaign
+list_placements <- vector(mode = "list", length(vec_campaigns))
+
+for (i in 1:length(vec_campaigns)) {
+  list_placements[[i]] <- paste(vec_campaigns[i], "placement", round(runif(n_placements, 10000, 99999)), sep = "_")
+}
+
+vec_placement <- do.call(c, list_placements)
+
+
+# Create creatives for each placement
+list_creativesizes <- vector(mode = "list", length(vec_placement))
+
+for (i in 1:length(vec_placement)) {
+  list_creativesizes[[i]] <- paste(vec_placement[i], "creativeSize", LETTERS[1:n_creativesizes], sep = "_")
+}
+
+vec_creativesizes <- do.call(c, list_creativesizes)
+
+
+# Create devices for each creative
+list_devices <- vector(mode = "list", length(vec_creativesizes))
+
+for (i in 1:length(vec_creativesizes)) {
+  list_devices[[i]] <- paste(vec_creativesizes[i], "device", LETTERS[1:n_devices], sep = "_")
+}
+
+vec_devices <- do.call(c, list_devices)
+
+
+# Multiply with number of days
+list_days <- vector(mode = "list", length(vec_devices))
+
+for (i in 1:length(vec_devices)) {
+  list_days[[i]] <- paste(vec_devices[i], "day", 1:n_days, sep = "_")
+}
+
+vec_days <- do.call(c, list_days)
+
+
+# Create impressions
+list_impressions <- vector(mode = "list", length(vec_creativesizes))
+
+for (i in 1:length(vec_creativesizes)) {
+  list_impressions[[i]] <- round(rbeta(n_days, 1.5, 10000) * 1e7)
+}
+
+vec_impressions <- do.call(c, list_impressions)
+
+
+# Create clicks
+list_clicks <- vector(mode = "list", length(vec_creativesizes))
+
+for (i in 1:length(vec_creativesizes)) {
+  list_clicks[[i]] <- round(rbeta(n_days, 1.5, 10000) * 1e5)
+}
+
+vec_clicks <- do.call(c, list_clicks)
+
+
+
+# Fill the tibble with the data
+# To fill the categorical dimensions we split the days-vector
+tt$campaign <- substr(vec_days, start = 1, stop = 10)
+tt$placement <- substr(vec_days, start = 12, stop = 26)
+tt$creativesize <- substr(vec_days, start = 28, stop = 41)
+tt$device <- substr(vec_days, start = 43, stop = 50)
+tt$day <- substr(vec_days, start = 56, stop = 58)
+tt$impressions <- vec_impressions
+tt$clicks <- vec_clicks
+tt$cost <- tt$impressions * rbeta(length(vec_creativesizes), 10, 1e9) * 3e5
+
+
+# Make adjustments to the clicks per device and creative, so it will better imitate CTR for different devices.
+for (i in unique(tt$device)) {
+  tt$clicks[tt$device == i] <- tt %>%
+    filter(device == i) %>%
+    mutate(clicks = round(clicks * runif(1, 0.5, 5))) %>%
+    pull(clicks)
+}
+
+for (i in unique(tt$creativesize)) {
+  tt$clicks[tt$creativesize == i] <- tt %>%
+    filter(creativesize == i) %>%
+    mutate(clicks = round(clicks * runif(1, 0.5, 5))) %>%
+    pull(clicks)
+}
+
+tt$clicks[tt$clicks >= tt$impressions] <- 1 # In case this adjustment creates more clicks than there are impressions
+
+
+# Make adjustments to the costs, so it will be different for different devices and creative sizes
+for (i in unique(tt$device)) {
+  tt$cost[tt$device == i] <- tt %>%
+    filter(device == i) %>%
+    mutate(cost = cost * runif(1, 0.5, 5)) %>%
+    pull(cost)
+}
+
+for (i in unique(tt$creativesize)) {
+  tt$cost[tt$creativesize == i] <- tt %>%
+    filter(creativesize == i) %>%
+    mutate(cost = cost * runif(1, 0.5, 5)) %>%
+    pull(cost)
+}
+
+```
+
+
+# The Plot
+
+The plot is built using ggplot2 and includes layers for a density plot and vertical lines with labels that show means of the KPI. This plot is shown in rows for the defines groups.
+
+```{r warnings = FALSE, fig.width = 8, fig.height = 8}
+library(tidyverse)
+
+tt_plot <- tt %>%
+    group_by(campaign, placement, creativesize, device, day) %>% # This is a preperation in case we want to remove dimensions later
+    summarise(sum_clicks = sum(clicks), sum_imp = sum(impressions)) %>% # This is a preperation in case we want to remove dimensions later
+    mutate(CTR = sum_clicks / sum_imp) %>%
+    as_tibble()
+
+grouped_means <- tt_plot %>% 
+    group_by(device) %>%
+    summarise(means = sum(sum_clicks) / sum(sum_imp))
+
+grouped_means_pct <- tt_plot %>% 
+    group_by(device) %>%
+    mutate(means = sum(sum_clicks) / sum(sum_imp)) %>%
+    summarise(pct_below = sum(sum_imp[CTR < means], na.rm = TRUE) / sum(sum_imp))
+    #summarise(pct_below = sum(CTR < means, na.rm = TRUE) / length(means))
+
+tt_plot %>%
+    group_by(device) %>%
+    mutate(imp_grp = sum(sum_imp)) %>%
+    ggplot(aes(CTR, group = device)) + # , group = device
+        geom_vline(aes(xintercept = (sum(sum_clicks) / sum(sum_imp))), color = "grey") +
+        geom_label(aes(x = (sum(sum_clicks) / sum(sum_imp)), y = 0.5, label = paste(round((sum(sum_clicks) / sum(sum_imp) * 100), 3),"%", sep = ""), size = 8), color = "grey") +
+        # geom_histogram(aes(y = stat(density), fill = device, alpha = 0.7), bins = 30) +
+        geom_density(aes(y = stat(density), weight = sum_imp / imp_grp, color = device, fill = device, alpha = 0.7)) + #, adjust = 1
+        geom_rug(alpha = 0.1) +
+        facet_grid(device ~ .) +
+        geom_vline(data = grouped_means, aes(xintercept = means, color = device)) +
+        geom_label(data = grouped_means, aes(x = means, y = 0, label = paste(round(means * 100, 3),"%", sep = ""), size = 8, color = device)) +
+        geom_label(data = grouped_means_pct, aes(x = 0, y = 0, label = paste(round(pct_below * 100, 1), "%", sep = ""), size = 8, color = device)) +
+        xlim(0, quantile(tt_plot$sum_clicks / tt_plot$sum_imp, probs = .75, na.rm = TRUE) + 4 * IQR(tt_plot$sum_clicks / tt_plot$sum_imp, na.rm = TRUE)) +
+        theme_minimal()
+```
+

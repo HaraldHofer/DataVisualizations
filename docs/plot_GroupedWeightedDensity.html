@@ -12,7 +12,7 @@
 <meta name="author" content="Harald Hofer" />
 
 
-<title>A Galaxy of Data</title>
+<title>Grouped plot with weighted density + histogram</title>
 
 <script src="site_libs/jquery-1.11.3/jquery.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -404,64 +404,72 @@ div.tocify {
 
 
 
-<h1 class="title toc-ignore">A Galaxy of Data</h1>
+<h1 class="title toc-ignore">Grouped plot with weighted density + histogram</h1>
 <h4 class="author">Harald Hofer</h4>
-<h4 class="date">25 2 2020</h4>
+<h4 class="date">26 2 2020</h4>
 
 </div>
 
 
-<div id="visualize-kpis-from-a-digital-report-as-stars" class="section level1">
-<h1>Visualize KPIs from a digital Report as Stars</h1>
-<p>Load packages</p>
-<pre class="r"><code>library(ggplot2)
-library(magrittr)
-library(dplyr)</code></pre>
-<pre><code>## 
-## Attaching package: &#39;dplyr&#39;</code></pre>
-<pre><code>## The following objects are masked from &#39;package:stats&#39;:
-## 
-##     filter, lag</code></pre>
-<pre><code>## The following objects are masked from &#39;package:base&#39;:
-## 
-##     intersect, setdiff, setequal, union</code></pre>
-<p>Create some simple data for three groups</p>
-<pre class="r"><code>cnt_group &lt;- c(2000, 3000, 5000)
+<div id="goal-of-the-plot" class="section level1">
+<h1>Goal of the plot</h1>
+<p>This plot is suppsed to show the distribution of a KPI for different groups. The distribution is weighted e.g. using the impressions to take into account the effect of volume. In addition to that the overall average and average per group is calculated and shown as vertical line. It also shows the % of volume which are lower than average.</p>
+<div id="background" class="section level2">
+<h2>Background</h2>
+<p>This kind of plot was created to help investigating a common topic in (digital) media: <em>Benchmarks</em></p>
+<p>Benchmarks are (at least implicitly) supposed to give an orientation about how “good” or “bad” a given KPI is. However, misconceptions about what benchmarks (commonly calculated as “overall-average”) represent are common. Understanding of the position of the KPI-benchmark compared with the whole distribution of the KPIs is needed.</p>
+</div>
+<div id="the-data" class="section level2">
+<h2>The Data</h2>
+<p>First, get a report or create some data that represents a typical digital ad report which includes Impressions and Clicks for different campaigns, placements, creative sizes and devices for a given time period. For this demo I use the script in my DataGenerators repository.</p>
+</div>
+</div>
+<div id="the-plot" class="section level1">
+<h1>The Plot</h1>
+<p>The plot is built using ggplot2 and includes layers for a density plot and vertical lines with labels that show means of the KPI. This plot is shown in rows for the defines groups.</p>
+<pre class="r"><code>library(tidyverse)
 
-value_1 &lt;- c((round(rbeta(n = cnt_group[1], shape1 = 1, shape2 = 700) * 1e5) ^2),
-             (round(rbeta(n = cnt_group[2], shape1 = 2, shape2 = 720) * 1e5) ^2),
-             (round(rbeta(n = cnt_group[3], shape1 = 1.5, shape2 = 750) * 1e5) ^2))
+tt_plot &lt;- tt %&gt;%
+    group_by(campaign, placement, creativesize, device, day) %&gt;% # This is a preperation in case we want to remove dimensions later
+    summarise(sum_clicks = sum(clicks), sum_imp = sum(impressions)) %&gt;% # This is a preperation in case we want to remove dimensions later
+    mutate(CTR = sum_clicks / sum_imp) %&gt;%
+    as_tibble()
 
-value_2 &lt;- c(rbeta(n = cnt_group[1], shape1 = 5, shape2 = 1000),
-             rbeta(n = cnt_group[2], shape1 = 6, shape2 = 1000),
-             rbeta(n = cnt_group[3], shape1 = 3, shape2 = 800))
+grouped_means &lt;- tt_plot %&gt;% 
+    group_by(device) %&gt;%
+    summarise(means = sum(sum_clicks) / sum(sum_imp))
 
-value_3 &lt;- round(value_1 * value_2)
+grouped_means_pct &lt;- tt_plot %&gt;% 
+    group_by(device) %&gt;%
+    mutate(means = sum(sum_clicks) / sum(sum_imp)) %&gt;%
+    summarise(pct_below = sum(sum_imp[CTR &lt; means], na.rm = TRUE) / sum(sum_imp))
+    #summarise(pct_below = sum(CTR &lt; means, na.rm = TRUE) / length(means))
 
-
-group &lt;- c(replicate(n = cnt_group[1], expr = &quot;A&quot;), 
-           replicate(n = cnt_group[2], expr = &quot;B&quot;),
-           replicate(n = cnt_group[3], expr = &quot;C&quot;))
-
-df &lt;- data.frame(value_1 = value_1,
-                 value_2 = value_2,
-                 value_3 = value_3,
-                 group = group)</code></pre>
-<p>Create grouped Galaxy-Plot</p>
-<pre class="r"><code>df %&gt;%
-    ggplot(aes(x = value_2, y = value_1, group = group)) + 
-        stat_density_2d(aes(fill = ..density..), geom = &quot;raster&quot;, contour = FALSE, interpolate = TRUE) +
-        geom_point(color = &quot;white&quot;, size = 0.1, alpha = 0.1) +
-        scale_fill_continuous(type = &quot;viridis&quot;) +
-        scale_y_log10(expand = c(0, 0)) +
-        scale_x_continuous(expand = c(0, 0)) +
-        facet_grid(group ~ .) +
+tt_plot %&gt;%
+    group_by(device) %&gt;%
+    mutate(imp_grp = sum(sum_imp)) %&gt;%
+    ggplot(aes(CTR, group = device)) + # , group = device
+        geom_vline(aes(xintercept = (sum(sum_clicks) / sum(sum_imp))), color = &quot;grey&quot;) +
+        geom_label(aes(x = (sum(sum_clicks) / sum(sum_imp)), y = 0.5, label = paste(round((sum(sum_clicks) / sum(sum_imp) * 100), 3),&quot;%&quot;, sep = &quot;&quot;), size = 8), color = &quot;grey&quot;) +
+        # geom_histogram(aes(y = stat(density), fill = device, alpha = 0.7), bins = 30) +
+        geom_density(aes(y = stat(density), weight = sum_imp / imp_grp, color = device, fill = device, alpha = 0.7)) + #, adjust = 1
+        geom_rug(alpha = 0.1) +
+        facet_grid(device ~ .) +
+        geom_vline(data = grouped_means, aes(xintercept = means, color = device)) +
+        geom_label(data = grouped_means, aes(x = means, y = 0, label = paste(round(means * 100, 3),&quot;%&quot;, sep = &quot;&quot;), size = 8, color = device)) +
+        geom_label(data = grouped_means_pct, aes(x = 0, y = 0, label = paste(round(pct_below * 100, 1), &quot;%&quot;, sep = &quot;&quot;), size = 8, color = device)) +
+        xlim(0, quantile(tt_plot$sum_clicks / tt_plot$sum_imp, probs = .75, na.rm = TRUE) + 4 * IQR(tt_plot$sum_clicks / tt_plot$sum_imp, na.rm = TRUE)) +
         theme_minimal()</code></pre>
-<pre><code>## Warning: Transformation introduced infinite values in continuous y-axis
+<pre><code>## Warning: Removed 445 rows containing non-finite values (stat_density).</code></pre>
+<pre><code>## Warning in density.default(x, weights = w, bw = bw, adjust = adjust, kernel
+## = kernel, : sum(weights) != 1 -- will not get true density
 
-## Warning: Transformation introduced infinite values in continuous y-axis</code></pre>
-<pre><code>## Warning: Removed 3 rows containing non-finite values (stat_density2d).</code></pre>
-<p><img src="plot_galaxy_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
+## Warning in density.default(x, weights = w, bw = bw, adjust = adjust, kernel
+## = kernel, : sum(weights) != 1 -- will not get true density
+
+## Warning in density.default(x, weights = w, bw = bw, adjust = adjust, kernel
+## = kernel, : sum(weights) != 1 -- will not get true density</code></pre>
+<p><img src="plot_GroupedWeightedDensity_files/figure-html/unnamed-chunk-2-1.png" width="768" /></p>
 </div>
 
 
